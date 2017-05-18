@@ -8,7 +8,6 @@ use strict;
 use warnings;
 
 use Getopt::Long qw(:config gnu_getopt no_ignore_case);
-use Text::CSV_XS qw(csv);
 
 my %Opts = (
     code => undef,
@@ -86,10 +85,13 @@ sub _read_file {
         return YAML::XS::Load($raw);
     } elsif ($fmt eq 'perl') {
         my $res = scalar eval $raw;
-        die "Can't read '$filename' as Perl: $@\n" if $@;
-        return $res;
+        if ($@) {
+            warn "Can't read '$filename' as Perl: $@\n";
+            exit 99;
+        }
     } else {
-        die "dt: Unknown input format '$fmt'\n";
+        warn "dt: Unknown input format '$fmt'\n";
+        exit 99;
     }
 }
 
@@ -125,7 +127,8 @@ sub _write_file {
         require Data::Dump;
         $res = Data::Dump::dump($data);
     } else {
-        die "dt: Unknown output format '$fmt'\n";
+        warn "dt: Unknown output format '$fmt'\n";
+        exit 99;
     }
 
     my $fh;
@@ -260,103 +263,6 @@ Add an output. Format will be guessed from .
 
 If not specified, will output all data to STDOUT.
 
-=item * --add=FILENAME[:TABLENAME], -a
-
-Add a table from a file. Type will be detected from filename extension (and some
-heuristics, if there is no file extension or extension is unrecognized). Die if
-type cannot be detected.
-
-Sometimes the detection will miss. Alternatively, you can use one of the
-C<--add-TYPE> options to add a specific table type.
-
-=item * --add-csv=FILENAME[:TABLENAME]
-
-Add a table from a CSV file. If C<TABLENAME> is not specified, it will be taken
-from C<FILENAME> (e.g. with filename C<foo-bar.csv>, table name will be
-C<foo_bar>). C<FILENAME> can be C<-> to mean the standard input (the default
-table name will be C<stdin>). Will croak if duplicate table name is detected.
-
-Table name must match regex C</\A[A-Za-z_][A-Za-z_0-9]*\z/>.
-
-=item * --add-tsv=FILENAME[:TABLENAME]
-
-Like C<--add-csv>, but will load file as TSV (tab-separated value).
-
-=item * --add-ltsv=FILENAME[:TABLENAME]
-
-Like C<--add-csv>, but will load file as LTSV (labeled tab separated value, see
-L<Text::LTSV>). Names of columns will be taken from the first row.
-
-=item * --add-json=FILENAME[:TABLENAME]
-
-Like C<--add-csv>, but will load file as JSON.
-
-Data can be array, or array of arrays, or array of hashes, or an enveloped
-response (see L<Rinci::function>), so it is suitable to accept piped output of
-L<Perinci::CmdLine>-based programs.
-
-=item * --add-yaml=FILENAME[:TABLENAME]
-
-Like C<--add-json>, but will load file as YAML.
-
-=item * --add-perl=FILENAME[:TABLENAME]
-
-Like C<--add-json>, but will load file as Perl.
-
-=item * --load-function=NAME, -F
-
-Load a SQL function. This will load Perl module
-C<SQL::Statement::Function::ByName::NAME>. See CPAN for list of available
-modules.
-
-If you use C<NAME:NEWNAME>, you can load a SQL function as another name, for
-example:
-
- -F DAYOFYEAR:DOY
-
-=item * --define-function=NAME:CODE, -D
-
-Define a SQL function. You need to specify name as well as perl code that
-implements it. Perl code will be wrapped in a subroutine, it should expect the
-function argument in C<$_[2]> (for more details see
-L<SQL::Statement::Functions>). Example:
-
- --define-function 'MONTH:$_[2] =~ /^\d{4}-(\d{2})-/ or return undef; $1+0'
-
-=item * --aoa
-
-Return array of array (the default). Only relevant to outputs like C<perl>,
-C<json>, C<yaml>, C<text>.
-
-=item * --aoh
-
-Return array of hashes instead of the default array of array, where each row is
-represented as a hash (dictionary/associated array) instead of an array. Only
-relevant to output formats like C<perl>, C<json>, C<yaml>, C<text>.
-
-Returning a hash is convenient when you want column name information on each
-row, but you can't specify the same column twice and order of columns are not
-guaranteed.
-
-=item * --format=FORMAT (default: text), -f
-
-Set output format.
-
-The value C<csv> or C<tsv> or C<ltsv> will cause query results to be output as a
-comma-separated or TAB-separated list or labeled-TAB separated list,
-respectively. As this isn't very useful for a schema listing, these values will
-be silently converted to C<text> if C<--show-schema> (C<-s>) is also present.
-
-The other values C<perl>, C<json>, C<yaml>, and C<text> will be formatted using
-appropriate L<Data::Format::Pretty> formatter.
-
-The default value is the most used table format. So if your tables are mostly
-CSV, B<fsql> will also output CSV by default.
-
-=item * --show-schema, -s
-
-Instead of running a query, show schema instead. This is useful for debugging.
-
 =back
 
 
@@ -364,7 +270,7 @@ Instead of running a query, show schema instead. This is useful for debugging.
 
 0 on success.
 
-255 on I/O or SQL error.
+255 on I/O error.
 
 99 on command-line options or input data error.
 
@@ -375,31 +281,9 @@ Instead of running a query, show schema instead. This is useful for debugging.
 
 If set to true, print debugging messages.
 
-=head2 DEBUG_KEEP_TEMPDIR => bool
 
-If set to true, will not cleanup tempdir.
+=head1 SEE ALSO
 
+L<jq>
 
-=head1 FAQ
-
-=head2 What SQL dialect is supported? Why is SQL feature "X" not supported?
-
-See L<SQL::Statement::Syntax> for the range of supported SQL syntax. In short,
-you can do select with several kinds of joins, almost/around 100 builtin
-functions (with additional functions available from Perl modules, see next FAQ
-entry), etc.
-
-Also, sometimes if there is SQL parsing error, the error message is not
-immediately obvious and can be a bit confusing. That is usually a
-parsing limitation/bug within SQL::Statement.
-
-=head2 How do I define more SQL functions? Why aren't there more date/time/X functions?
-
-SQL::Statement allows loading Perl functions as SQL functions. There are several
-CPAN modules (see the C<SQL::Statement::Function::ByName::> namespace) which
-nicely package them so you can load them from B<fsql> simply by using the C<-F>
-option, e.g. to load the YEAR() function:
-
- % fsql -F YEAR --add-csv sometable.csv 'SELECT c1, YEAR(c2) FROM sometable ...'
-
-=cut
+L<jt>, L<App::PipeFilter>, L<jsonsel>, L<ddsel>, L<yamlsel>
