@@ -1,0 +1,405 @@
+#!perl
+
+# DATE
+# VERSION
+
+use 5.010001;
+use strict;
+use warnings;
+
+use Getopt::Long qw(:config gnu_getopt no_ignore_case);
+use Text::CSV_XS qw(csv);
+
+my %Opts = (
+    code => undef,
+    outputs => [],
+    overwrite => 0,
+    default_input_format => 'json',
+    default_output_format => 'json',
+);
+our @DATA;
+
+our $DEBUG = $ENV{DEBUG};
+
+sub _debug {
+    my $msg = shift;
+
+    $msg .= "\n" unless $msg =~ /\n$/;
+    warn "DEBUG: $msg" if $DEBUG;
+}
+
+sub _guess_format_from_filename {
+    my $filename = shift;
+
+    # try to detect type from filename
+    if ($filename =~ /\.(json|js)\z/i) {
+        return 'json';
+    } elsif ($filename =~ /\.(yaml|yml)\z/i) {
+        return 'yaml';
+    } elsif ($filename =~ /\.(perl|pl|pm|pod|dd)\z/i) {
+        return 'perl';
+    }
+    undef;
+}
+
+sub _read_file {
+    my ($filename) = @_;
+
+    my $fmt;
+  DETERMINE_INPUT_FORMAT:
+    {
+        if ($filename eq '-') {
+            $fmt = $Opts{default_input_format};
+            last;
+        } elsif ($filename =~ s/:(json|yaml|perl)\z//) {
+            $fmt = $1;
+            last;
+        } else {
+            $fmt = _guess_format_from_filename($filename);
+            last if $fmt;
+        }
+
+        # XXX detect format by reading a few lines from it
+
+        $fmt = $Opts{default_input_format};
+    }
+    _debug("input format=$fmt");
+
+    my $fh;
+    if ($filename eq '-') {
+        $fh = \*STDIN;
+    } else {
+        open $fh, "<", $filename
+            or die "Can't open '$filename': $!\n";
+    }
+    my $raw = do {
+        local $/;
+        scalar <$fh>;
+    };
+
+    if ($fmt eq 'json') {
+        require JSON::MaybeXS;
+        my $json = JSON::MaybeXS->new->allow_nonref;
+        return $json->decode($raw);
+    } elsif ($fmt eq 'yaml') {
+        require YAML::XS;
+        return YAML::XS::Load($raw);
+    } elsif ($fmt eq 'perl') {
+        my $res = scalar eval $raw;
+        die "Can't read '$filename' as Perl: $@\n" if $@;
+        return $res;
+    } else {
+        die "dt: Unknown input format '$fmt'\n";
+    }
+}
+
+sub _write_file {
+    my ($filename, $data) = @_;
+
+    my $fmt;
+  DETERMINE_OUTPUT_FORMAT:
+    {
+        if ($filename eq '-') {
+            $fmt = $Opts{default_output_format};
+            last;
+        } elsif ($filename =~ s/:(json|yaml|perl)\z//) {
+            $fmt = $1;
+            last;
+        } else {
+            $fmt = _guess_format_from_filename($filename);
+            last if $fmt;
+        }
+
+        $fmt = $Opts{default_output_format};
+    }
+
+    my $res;
+    if ($fmt eq 'json') {
+        require JSON::MaybeXS;
+        my $json = JSON::MaybeXS->new->allow_nonref;
+        $res = $json->encode($data);
+    } elsif ($fmt eq 'yaml') {
+        require YAML::XS;
+        $res = YAML::XS::Dump($data);
+    } elsif ($fmt eq 'perl') {
+        require Data::Dump;
+        $res = Data::Dump::dump($data);
+    } else {
+        die "dt: Unknown output format '$fmt'\n";
+    }
+
+    my $fh;
+    if ($filename eq '-') {
+        $fh = \*STDOUT;
+    } else {
+        if ((-f $filename) && !$Opts{overwrite}) {
+            warn "dt: Skipped writing to '$filename': already exists\n";
+            return;
+        }
+        open $fh, ">", $filename
+            or die "Can't open '$filename': $!\n";
+    }
+    print $fh $res;
+    print $fh "\n" unless $res =~ /\R\z/;
+}
+
+sub parse_cmdline {
+    my $res = GetOptions(
+        'e=s' => \$Opts{code},
+        'overwrite' => \$Opts{overwrite},
+        'outputs=s' => \$Opts{outputs},
+        'default-input-format|f=s' => \$Opts{default_input_format},
+        'default-output-format|F=s' => \$Opts{default_output_format},
+        'help|h'         => sub {
+            print <<USAGE;
+Usage:
+  dt [OPTIONS]... [FILES]...
+  dt --help|-h
+  dt --version|-v
+Options:
+  -e
+  --overwrite
+  --input-format=s, -f
+  --output-format=s, -F
+  --default-input-format=s, -f
+  --default-output-format=s, -F
+  --output=s+, -o
+For more details, see the manpage/documentation.
+USAGE
+            exit 0;
+        },
+        'version|v'      => sub {
+            say "dt version ", ($main::VERSION // "dev"),
+                ($main::DATE ? " ($main::DATE)" : "");
+            exit 0;
+        },
+    );
+    exit 99 if !$res;
+}
+
+sub run {
+    my @filenames = @ARGV;
+    @filenames = ("-") unless @filenames;
+    for (@filenames) {
+        push @DATA, _read_file($_);
+    }
+
+    if ($Opts{code}) {
+        local $_ = $DATA[0];
+        eval $Opts{code};
+        die "Code dies: $@\n" if $@;
+    }
+
+    my @outputs = @{ $Opts{outputs} };
+    @outputs = ("-" x @DATA) unless @outputs;
+    for my $i (0..$#outputs) {
+        _write_file($outputs[$i], $DATA[$i]);
+    }
+}
+
+# MAIN
+
+parse_cmdline();
+run();
+
+1;
+# ABSTRACT: CLI data transformer
+# PODNAME:
+
+=head1 SYNOPSIS
+
+ % dt [OPTIONS] [FILE]...
+
+
+=head1 DESCRIPTION
+
+Roughly similar to utilities like L<jq>, L<jt>, the L<App::PipeFilter> suite,
+L<jsonsel>, L<ddsel>, L<yamlsel>, this B<dt> utility can be used to transform
+data structure on the CLI using Perl code. It accepts one or several files of
+encoded data structures in several formats (JSON, YAML, Perl), lets you specify
+Perl code to modify them, and spits them out again in specified format. The
+input data structures are put into C<$DATA[0]>, C<$DATA[1]> and so on. The first
+data structure is also put in C<$_>.
+
+Some examples:
+
+=over
+
+=item * Convert JSON to YAML
+
+ % dt books.json -o books.yaml
+
+=item * Add a field to records, output to STDOUT
+
+ % dt -e 'my $now = time; for (@$DATA) { $_->{status} = $_->{mtime} >= $now-7*86400 ? "new" : "" }' < books.json
+
+=item * Get YAML from STDIN, output it as Perl
+
+ % other-cmd | dt -f yaml -F perl -o data
+
+=back
+
+
+=head1 OPTIONS
+
+=over
+
+=item * --overwrite
+
+=item * --default-input-format FORMAT, -f
+
+Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>.
+
+=item * --default-output-format FORMAT, -F
+
+Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>.
+
+=item * --output FILENAME, -o
+
+Add an output. Format will be guessed from .
+
+If not specified, will output all data to STDOUT.
+
+=item * --add=FILENAME[:TABLENAME], -a
+
+Add a table from a file. Type will be detected from filename extension (and some
+heuristics, if there is no file extension or extension is unrecognized). Die if
+type cannot be detected.
+
+Sometimes the detection will miss. Alternatively, you can use one of the
+C<--add-TYPE> options to add a specific table type.
+
+=item * --add-csv=FILENAME[:TABLENAME]
+
+Add a table from a CSV file. If C<TABLENAME> is not specified, it will be taken
+from C<FILENAME> (e.g. with filename C<foo-bar.csv>, table name will be
+C<foo_bar>). C<FILENAME> can be C<-> to mean the standard input (the default
+table name will be C<stdin>). Will croak if duplicate table name is detected.
+
+Table name must match regex C</\A[A-Za-z_][A-Za-z_0-9]*\z/>.
+
+=item * --add-tsv=FILENAME[:TABLENAME]
+
+Like C<--add-csv>, but will load file as TSV (tab-separated value).
+
+=item * --add-ltsv=FILENAME[:TABLENAME]
+
+Like C<--add-csv>, but will load file as LTSV (labeled tab separated value, see
+L<Text::LTSV>). Names of columns will be taken from the first row.
+
+=item * --add-json=FILENAME[:TABLENAME]
+
+Like C<--add-csv>, but will load file as JSON.
+
+Data can be array, or array of arrays, or array of hashes, or an enveloped
+response (see L<Rinci::function>), so it is suitable to accept piped output of
+L<Perinci::CmdLine>-based programs.
+
+=item * --add-yaml=FILENAME[:TABLENAME]
+
+Like C<--add-json>, but will load file as YAML.
+
+=item * --add-perl=FILENAME[:TABLENAME]
+
+Like C<--add-json>, but will load file as Perl.
+
+=item * --load-function=NAME, -F
+
+Load a SQL function. This will load Perl module
+C<SQL::Statement::Function::ByName::NAME>. See CPAN for list of available
+modules.
+
+If you use C<NAME:NEWNAME>, you can load a SQL function as another name, for
+example:
+
+ -F DAYOFYEAR:DOY
+
+=item * --define-function=NAME:CODE, -D
+
+Define a SQL function. You need to specify name as well as perl code that
+implements it. Perl code will be wrapped in a subroutine, it should expect the
+function argument in C<$_[2]> (for more details see
+L<SQL::Statement::Functions>). Example:
+
+ --define-function 'MONTH:$_[2] =~ /^\d{4}-(\d{2})-/ or return undef; $1+0'
+
+=item * --aoa
+
+Return array of array (the default). Only relevant to outputs like C<perl>,
+C<json>, C<yaml>, C<text>.
+
+=item * --aoh
+
+Return array of hashes instead of the default array of array, where each row is
+represented as a hash (dictionary/associated array) instead of an array. Only
+relevant to output formats like C<perl>, C<json>, C<yaml>, C<text>.
+
+Returning a hash is convenient when you want column name information on each
+row, but you can't specify the same column twice and order of columns are not
+guaranteed.
+
+=item * --format=FORMAT (default: text), -f
+
+Set output format.
+
+The value C<csv> or C<tsv> or C<ltsv> will cause query results to be output as a
+comma-separated or TAB-separated list or labeled-TAB separated list,
+respectively. As this isn't very useful for a schema listing, these values will
+be silently converted to C<text> if C<--show-schema> (C<-s>) is also present.
+
+The other values C<perl>, C<json>, C<yaml>, and C<text> will be formatted using
+appropriate L<Data::Format::Pretty> formatter.
+
+The default value is the most used table format. So if your tables are mostly
+CSV, B<fsql> will also output CSV by default.
+
+=item * --show-schema, -s
+
+Instead of running a query, show schema instead. This is useful for debugging.
+
+=back
+
+
+=head1 EXIT CODES
+
+0 on success.
+
+255 on I/O or SQL error.
+
+99 on command-line options or input data error.
+
+
+=head1 ENVIRONMENT
+
+=head2 DEBUG => bool
+
+If set to true, print debugging messages.
+
+=head2 DEBUG_KEEP_TEMPDIR => bool
+
+If set to true, will not cleanup tempdir.
+
+
+=head1 FAQ
+
+=head2 What SQL dialect is supported? Why is SQL feature "X" not supported?
+
+See L<SQL::Statement::Syntax> for the range of supported SQL syntax. In short,
+you can do select with several kinds of joins, almost/around 100 builtin
+functions (with additional functions available from Perl modules, see next FAQ
+entry), etc.
+
+Also, sometimes if there is SQL parsing error, the error message is not
+immediately obvious and can be a bit confusing. That is usually a
+parsing limitation/bug within SQL::Statement.
+
+=head2 How do I define more SQL functions? Why aren't there more date/time/X functions?
+
+SQL::Statement allows loading Perl functions as SQL functions. There are several
+CPAN modules (see the C<SQL::Statement::Function::ByName::> namespace) which
+nicely package them so you can load them from B<fsql> simply by using the C<-F>
+option, e.g. to load the YEAR() function:
+
+ % fsql -F YEAR --add-csv sometable.csv 'SELECT c1, YEAR(c2) FROM sometable ...'
+
+=cut
