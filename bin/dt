@@ -204,7 +204,7 @@ sub run {
     }
 
     my @outputs = @{ $Opts{outputs} };
-    @outputs = ("-" x @DATA) unless @outputs;
+    @outputs = (("-") x @DATA) unless @outputs;
     for my $i (0..$#outputs) {
         _write_file($outputs[$i], $DATA[$i]);
     }
