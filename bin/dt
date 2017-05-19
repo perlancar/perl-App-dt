@@ -160,7 +160,7 @@ Usage:
   dt --help|-h
   dt --version|-v
 Options:
-  -e
+  -e=s
   --overwrite
   --input-format=s, -f
   --output-format=s, -F
@@ -223,7 +223,7 @@ data structure on the CLI using Perl code. It accepts one or several files of
 encoded data structures in several formats (JSON, YAML, Perl), lets you specify
 Perl code to modify them, and spits them out again in specified format. The
 input data structures are put into C<$DATA[0]>, C<$DATA[1]> and so on. The first
-data structure is also put in C<$_>.
+data structure is also put in C<$DATA> as well as C<$_>.
 
 Some examples:
 
@@ -248,7 +248,16 @@ Some examples:
 
 =over
 
+=item * -e CODE
+
+Specify Perl code to run. These variables are set: C<@DATA> will be set to the
+data structures, in the order of the specified files, C<$DATA> and C<$_> will
+also be set to the first data structure.
+
 =item * --overwrite
+
+Overwrite existing output files instead of skipping writing to output files when
+they already exist.
 
 =item * --default-input-format FORMAT, -f
 
