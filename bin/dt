@@ -183,7 +183,7 @@ USAGE
 
 sub run {
     my @filenames = @ARGV;
-    @filenames = ("-") unless @filenames;
+    @filenames = ("-") if !@filenames && !(-t STDIN);
     for (@filenames) {
         push @DATA, _read_file($_);
     }
@@ -192,14 +192,23 @@ sub run {
         local $_ = $DATA[0];
         local $DATA = $DATA[0];
         my $orig_data0 = $DATA[0];
-        eval "no strict; no warnings; $Opts{code}";
+
+        my $res = eval "no strict; no warnings; $Opts{code}";
         die "Code dies: $@\n" if $@;
-        # allow user to set $DATA[0] from $DATA or $_
-        if ($DATA != $orig_data0) {
-            $DATA[0] = $DATA;
+
+        # allow user to set $DATA[0] from last expression
+        if (!defined($DATA[0])) {
+            $DATA[0] = $res;
         }
-        if ($_ != $orig_data0) {
-            $DATA[0] = $_;
+
+        # allow user to set $DATA[0] from $DATA or $_
+        if (defined $orig_data0) {
+            if (defined($DATA) && $DATA != $orig_data0) {
+                $DATA[0] = $DATA;
+            }
+            if (defined($_) && $_ != $orig_data0) {
+                $DATA[0] = $_;
+            }
         }
     }
 
@@ -228,27 +237,73 @@ run();
 
 Roughly similar to utilities like L<jq>, L<jt>, the L<App::PipeFilter> suite,
 L<jsonsel>, L<ddsel>, L<yamlsel>, this B<dt> utility can be used to transform
-data structure on the CLI using Perl code. It accepts one or several files of
+data structure on the CLI using Perl code. It accepts zero or more files of
 encoded data structures in several formats (JSON, YAML, Perl), lets you specify
-Perl code to modify them, and spits them out again in specified format. The
-input data structures are put into C<$DATA[0]>, C<$DATA[1]> and so on. The first
-data structure is also put in C<$DATA> as well as C<$_>.
+Perl code to generate or modify them, and spits them out again in specified
+output format. The data structures are put into C<$DATA[0]>, C<$DATA[1]> and so
+on. The first data structure is also put in C<$DATA> as well as C<$_>.
 
 Some examples:
 
 =over
 
+=item * Generate some JSON
+
+ % dt -e '[1..100]'
+ % dt -e '[1..100]' -o numbers.json
+ % dt -e '$n = 100; $DATA = [1..$n]' -o numbers.yaml
+
+Input files are specified as arguments. If you do not specify any argument, and
+C<dt> is at the right side of a pipeline, then you can generate data in the
+code. The last expression or C<$DATA> or C<$_> will be used.
+
+One or more C<--output> (C<-o>) options can be specified to direct output to
+files. The first output file will be set to C<$DATA[0]> (or C<$DATA> or C<$_>),
+the second to C<$DATA[1]> and so on. If no output files are specified, will
+output to STDOUT.
+
 =item * Convert JSON to YAML
 
  % dt books.json -o books.yaml
 
-=item * Add a field to records, output to STDOUT
+Input and output format are guessed from filename extension. Or, you can also
+use C<:FORMAT> notation for input, e.g.:
+
+ % dt books.dat:json -o books.yml
+
+These formats are currently supported: C<json>, C<yaml>, C<perl>.
+
+=item * Convert several YAML files to JSON
+
+ % dt 1.json 2.json 3.json -o 1.yml -o 2.yml -o 3.yml
+
+=item * Convert YAML to Perl: get the YAML from STDIN and output to a file
+
+ % other-cmd | dt -f yaml -F perl -o datafile
+
+If no input files are specified but C<dt> is at the right side of a pipeline,
+data will be retrieved from STDIN.
+
+Also, when output filename does not give any hint about format, you can set
+output format using C<-F>.
+
+=item * Convert YAML to pretty-printed JSON (see L<pp-json>)
+
+ % dt books.yaml | pp-json
+
+The default output format is JSON.
+
+=item * Get a branch of data structure
+
+ % dt bookstore.json -e '$DATA = $DATA->{store}{book}' -o books.json
+
+=item * Add a field to records, output to STDOUT as JSON
 
  % dt -e 'my $now = time; for (@$DATA) { $_->{status} = $_->{mtime} >= $now-7*86400 ? "new" : "" }' < books.json
 
-=item * Get YAML from STDIN, output it as Perl
+=item * Merge several YAML together as array of data structures
 
- % other-cmd | dt -f yaml -F perl -o data
+ % dt 1.yaml 2.yaml 3.yaml -e '$DATA = [@DATA]' -o combined.yaml
 
 =back
 
@@ -259,9 +314,9 @@ Some examples:
 
 =item * -e CODE
 
-Specify Perl code to run. These variables are set: C<@DATA> will be set to the
-data structures, in the order of the specified files, C<$DATA> and C<$_> will
-also be set to the first data structure.
+Specify Perl code to run. These variables are set for the code: C<@DATA> to the
+data structures (in the order of the specified files), also C<$DATA> and C<$_>
+to the first data structure.
 
 =item * --overwrite
 
