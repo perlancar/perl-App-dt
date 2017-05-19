@@ -151,11 +151,11 @@ sub parse_cmdline {
     my $res = GetOptions(
         'e=s' => \$Opts{code},
         'overwrite' => \$Opts{overwrite},
-        'outputs=s' => \$Opts{outputs},
+        'outputs|o=s@' => \$Opts{outputs},
         'default-input-format|f=s' => \$Opts{default_input_format},
         'default-output-format|F=s' => \$Opts{default_output_format},
         'help|h'         => sub {
-            print <<USAGE;
+            print <<'USAGE';
 Usage:
   dt [OPTIONS]... [FILES]...
   dt --help|-h
@@ -167,7 +167,7 @@ Options:
   --output-format=s, -F
   --default-input-format=s, -f
   --default-output-format=s, -F
-  --output=s+, -o
+  --output=s@, -o
 For more details, see the manpage/documentation.
 USAGE
             exit 0;
