@@ -17,6 +17,7 @@ my %Opts = (
     default_output_format => 'json',
 );
 our @DATA;
+our $DATA;
 
 our $DEBUG = $ENV{DEBUG};
 

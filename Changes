@@ -1,3 +1,10 @@
+0.002   2017-05-19 (PERLANCAR)
+
+	- POD fixes/additions.
+
+	- Also set $DATA to the first data structure.
+
+
 0.001   2017-05-18 (PERLANCAR)
 
         - First early release, no tests.
