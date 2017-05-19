@@ -189,6 +189,7 @@ sub run {
 
     if ($Opts{code}) {
         local $_ = $DATA[0];
+        local $DATA = $DATA[0];
         eval $Opts{code};
         die "Code dies: $@\n" if $@;
     }
