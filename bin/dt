@@ -191,8 +191,16 @@ sub run {
     if ($Opts{code}) {
         local $_ = $DATA[0];
         local $DATA = $DATA[0];
-        eval $Opts{code};
+        my $orig_data0 = $DATA[0];
+        eval "no strict; no warnings; $Opts{code}";
         die "Code dies: $@\n" if $@;
+        # allow user to set $DATA[0] from $DATA or $_
+        if ($DATA != $orig_data0) {
+            $DATA[0] = $DATA;
+        }
+        if ($_ != $orig_data0) {
+            $DATA[0] = $_;
+        }
     }
 
     my @outputs = @{ $Opts{outputs} };
