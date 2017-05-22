@@ -188,6 +188,9 @@ sub run {
         push @DATA, _read_file($_);
     }
 
+    my @outputs = @{ $Opts{outputs} };
+    @outputs = (("-") x @DATA) unless @outputs;
+
     if ($Opts{code}) {
         local $_ = $DATA[0];
         local $DATA = $DATA[0];
@@ -202,21 +205,24 @@ sub run {
         }
 
         # allow user to set $DATA[0] from $DATA or $_
-        if (defined $orig_data0) {
+      SET_RESULT:
+        {
+            last unless defined $orig_data0;
             if (defined($DATA) && $DATA != $orig_data0) {
                 $DATA[0] = $DATA;
+                last;
             }
             if (defined($_) && $_ != $orig_data0) {
                 $DATA[0] = $_;
+                last;
             }
-            if (defined($res)) {
+            if (@outputs == 1) {
                 $DATA[0] = $res;
+                last;
             }
         }
     }
 
-    my @outputs = @{ $Opts{outputs} };
-    @outputs = (("-") x @DATA) unless @outputs;
     for my $i (0..$#outputs) {
         _write_file($outputs[$i], $DATA[$i]);
     }
@@ -306,7 +312,11 @@ The default output format is JSON.
 
 =item * Merge several YAML together as array of data structures
 
- % dt 1.yaml 2.yaml 3.yaml -e '$DATA = [@DATA]' -o combined.yaml
+ % dt 1.yaml 2.yaml 3.yaml -e '[@DATA]' -o combined.yaml
+
+=item * Modify several YAML files, save as JSON
+
+ % dt 1.yaml 2.yaml 3.yaml -e 'for (@DATA) { $_->{status} = "Checked" }' -o 1.json -o 2.json -o 3.json
 
 =back
 
