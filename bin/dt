@@ -209,6 +209,9 @@ sub run {
             if (defined($_) && $_ != $orig_data0) {
                 $DATA[0] = $_;
             }
+            if (defined($res)) {
+                $DATA[0] = $res;
+            }
         }
     }
 
@@ -295,11 +298,11 @@ The default output format is JSON.
 
 =item * Get a branch of data structure
 
- % dt bookstore.json -e '$DATA = $DATA->{store}{book}' -o books.json
+ % dt bookstore.json -e '$DATA->{store}{book}' -o books.json
 
 =item * Add a field to records, output to STDOUT as JSON
 
- % dt -e 'my $now = time; for (@$DATA) { $_->{status} = $_->{mtime} >= $now-7*86400 ? "new" : "" }' < books.json
+ % dt -e 'my $now = time; for (@$DATA) { $_->{status} = $_->{mtime} >= $now-7*86400 ? "new" : "" } $DATA' < books.json
 
 =item * Merge several YAML together as array of data structures
 
