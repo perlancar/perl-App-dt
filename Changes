@@ -1,3 +1,8 @@
+0.005   2019-09-19  Released-By: PERLANCAR; Urgency: medium
+
+	- Add output format 'raw' (passed to print() directly).
+
+
 0.004   2017-05-22  Released-By: PERLANCAR
 
         - [Incompatible change] When there is only a single output, set $DATA[0]
