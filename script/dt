@@ -127,6 +127,8 @@ sub _write_file {
     } elsif ($fmt eq 'perl') {
         require Data::Dump;
         $res = Data::Dump::dump($data);
+    } elsif ($fmt eq 'raw') {
+        $res = $data;
     } else {
         warn "dt: Unknown output format '$fmt'\n";
         exit 99;
@@ -338,11 +340,13 @@ they already exist.
 
 =item * --default-input-format FORMAT, -f
 
-Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>.
+Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>,
+C<raw>.
 
 =item * --default-output-format FORMAT, -F
 
-Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>.
+Set default output format. Default is C<json>. Can also be C<yaml>, C<perl>,
+C<raw>.
 
 =item * --output FILENAME, -o
 
