@@ -1,12 +1,14 @@
 #!perl
 
 # DATE
+# DIST
 # VERSION
 
 use 5.010001;
 use strict;
 use warnings;
 
+use Data::Dmp 'dmp';
 use Getopt::Long qw(:config gnu_getopt no_ignore_case);
 
 my %Opts = (
@@ -67,8 +69,10 @@ sub _read_file {
 
     my $fh;
     if ($filename eq '-') {
+        _debug("input source=stdin");
         $fh = \*STDIN;
     } else {
+        _debug("input file=$filename");
         open $fh, "<", $filename
             or die "Can't open '$filename': $!\n";
     }
@@ -90,6 +94,7 @@ sub _read_file {
             warn "Can't read '$filename' as Perl: $@\n";
             exit 99;
         }
+        return $res;
     } else {
         warn "dt: Unknown input format '$fmt'\n";
         exit 99;
