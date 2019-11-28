@@ -309,7 +309,7 @@ use C<:FORMAT> notation for input, e.g.:
 
 These formats are currently supported: C<json>, C<yaml>, C<perl>.
 
-=item * Convert several YAML files to JSON
+=item * Convert several JSON files to YAML
 
  % dt 1.json 2.json 3.json -o 1.yml -o 2.yml -o 3.yml
 
